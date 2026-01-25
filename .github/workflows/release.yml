@@ -1,0 +1,87 @@
+name: Build and Release
+
+env:
+  VERSION: v1.0.0
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup .NET
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        if: steps.check_tag.outputs.exists == 'false'
+        run: dotnet restore
+
+      - name: Build
+        if: steps.check_tag.outputs.exists == 'false'
+        run: dotnet build -c Release --no-restore
+
+      - name: Publish
+        if: steps.check_tag.outputs.exists == 'false'
+        run: dotnet publish -c Release --no-build -o ./publish
+
+      - name: Create release structure
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          mkdir -p release/sharp/modules/ChatTranslatorHud
+          mkdir -p release/sharp/locales
+          
+          cp ./publish/ChatTranslatorHud.dll release/sharp/modules/ChatTranslatorHud/
+          cp ./locale/*.json release/sharp/locales/
+
+      - name: Create zip archive
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          cd release
+          zip -r ../ChatTranslatorHud-${{ env.VERSION }}.zip sharp
+
+      - name: Create tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ env.VERSION }}
+          git push origin ${{ env.VERSION }}
+
+      - name: Create Release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          files: ChatTranslatorHud-${{ env.VERSION }}.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip message
+        if: steps.check_tag.outputs.exists == 'true'
+        run: echo "Tag ${{ env.VERSION }} already exists. Skipping release."
