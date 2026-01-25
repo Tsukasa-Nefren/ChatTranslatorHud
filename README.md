@@ -27,9 +27,19 @@ A ModSharp plugin for Counter-Strike 2 servers. Translates console messages via 
 
 ## Installation
 
-1. Copy the built DLL to the ModSharp plugins folder
-2. Copy the `locale` folder as well
+1. Download the latest release from [Releases](../../releases)
+2. Extract the zip file to your server's root folder (the `sharp` folder will merge automatically)
 3. Start the server and edit the generated config file
+
+The release archive structure:
+```
+sharp/
+├── modules/
+│   └── ChatTranslatorHud/
+│       └── ChatTranslatorHud.dll
+└── locales/
+    └── ChatTranslatorHud.json
+```
 
 ## Configuration
 
