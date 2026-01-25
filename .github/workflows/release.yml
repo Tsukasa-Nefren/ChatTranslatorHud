@@ -1,7 +1,7 @@
 name: Build and Release
 
 env:
-  VERSION: v1.0.0
+  VERSION: 1.0.0
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
       - name: Check if tag exists
         id: check_tag
         run: |
-          if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
+          if git rev-parse "v${{ env.VERSION }}" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
@@ -62,26 +62,26 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         run: |
           cd release
-          zip -r ../ChatTranslatorHud-${{ env.VERSION }}.zip sharp
+          zip -r ../ChatTranslatorHud-v${{ env.VERSION }}.zip sharp
 
       - name: Create tag
         if: steps.check_tag.outputs.exists == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ env.VERSION }}
-          git push origin ${{ env.VERSION }}
+          git tag v${{ env.VERSION }}
+          git push origin v${{ env.VERSION }}
 
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          files: ChatTranslatorHud-${{ env.VERSION }}.zip
+          tag_name: v${{ env.VERSION }}
+          files: ChatTranslatorHud-v${{ env.VERSION }}.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Skip message
         if: steps.check_tag.outputs.exists == 'true'
-        run: echo "Tag ${{ env.VERSION }} already exists. Skipping release."
+        run: echo "Tag v${{ env.VERSION }} already exists. Skipping release."
