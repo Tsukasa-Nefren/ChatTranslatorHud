@@ -1,4 +1,7 @@
 # Changelog
+## [1.1.1]
+
+- **Fix missing .deps.json in release archive**
 
 ## [1.1.0]
 
@@ -26,3 +29,4 @@
 ### Added
 
 - Initial release: DeepL console message translation, chat & HUD display, countdown detection, per-player language and settings.
+
