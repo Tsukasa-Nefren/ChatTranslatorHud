@@ -39,6 +39,7 @@ sharp/
 │       └── ChatTranslatorHud.dll
 └── locales/
     ├── ChatTranslatorHud.json
+    ├── ChatTranslatorHud.deps.json
     └── basemenu.json
 ```
 
@@ -79,5 +80,6 @@ Supports all languages provided by the DeepL API, including but not limited to:
 > **European:** English, German, French, Spanish, Portuguese, Italian, Dutch, Polish, Russian, Turkish, Danish, Finnish, Swedish, Czech, Hungarian, Romanian, Bulgarian, Greek, Ukrainian
 
 ## License
+
 
 This project is licensed under the MIT License.
