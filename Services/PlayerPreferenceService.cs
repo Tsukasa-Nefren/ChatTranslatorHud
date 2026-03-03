@@ -18,8 +18,8 @@ internal class PlayerPreferenceService(
     private const string CookieHudEnabled = "ChatTranslatorHud_HudEnabled";
     private const string CookieOriginalMsgEnabled = "ChatTranslatorHud_OriginalMsgEnabled";
     
-    private readonly ConcurrentDictionary<ulong, bool> _hudEnabledCache = new();
-    private readonly ConcurrentDictionary<ulong, bool> _originalMessageEnabledCache = new();
+    private readonly ConcurrentDictionary<ulong, bool> _hudEnabledCache = [];
+    private readonly ConcurrentDictionary<ulong, bool> _originalMessageEnabledCache = [];
 
     public void OnInit()
     {
@@ -115,4 +115,11 @@ internal class PlayerPreferenceService(
     public bool IsOriginalMessageEnabled(IGameClient client) => GetPreference(client, _originalMessageEnabledCache);
     public bool ToggleOriginalMessage(IGameClient client) => TogglePreference(client, CookieOriginalMsgEnabled, _originalMessageEnabledCache, IsOriginalMessageEnabled);
     public void SetOriginalMessageEnabled(IGameClient client, bool enabled) => SetPreference(client, CookieOriginalMsgEnabled, enabled, _originalMessageEnabledCache);
+
+    public void RemovePlayer(IGameClient client)
+    {
+        var steamId = (ulong)client.SteamId;
+        _hudEnabledCache.TryRemove(steamId, out _);
+        _originalMessageEnabledCache.TryRemove(steamId, out _);
+    }
 }

@@ -7,9 +7,9 @@ public interface IPlayerTranslationService : IModule
 {
     Task<string?> GetTranslatedTextForPlayerAsync(IGameClient client, string originalText);
     
-    Task SendTranslatedMessageToAllAsync(string originalText);
-    
     void SetPlayerLanguage(IGameClient client, string language);
     
     string? GetPlayerLanguage(IGameClient client);
+
+    void RemovePlayer(IGameClient client);
 }

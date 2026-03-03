@@ -30,6 +30,9 @@ public static class MessageParser
         @"^[\s<>＜＞〈〉《》\[\]【】「」『』\(\)（）]*(\d{1,4})[\s<>＜＞〈〉《》\[\]【】「」『』\(\)（）]*$", 
         RegexOptions.Compiled);
 
+    private static readonly Regex VersionPrefixRegex = new(@"[vV](?:er)?\s*\d", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex CountdownUnitRegex = new(@"\d+\s*(s|sec|secs|second|seconds|초|m|min|mins|minute|minutes|분)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex[] SystemMessageFilters = {
         new(@"^stripper\s+update\s+\d{2}\.\d{2}\.\d{2}$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"^stripper\s+update\s+\d{2}/\d{2}/\d{2}$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
@@ -170,7 +173,7 @@ public static class MessageParser
         if (IsSystemMessage(message))
             return false;
         
-        if (Regex.IsMatch(message, @"[vV](?:er)?\s*\d", RegexOptions.IgnoreCase))
+        if (VersionPrefixRegex.IsMatch(message))
             return false;
         
         var letters = message.Count(char.IsLetter);
@@ -179,7 +182,7 @@ public static class MessageParser
         
         if (letters > 0 && (double)letters / total > 0.3)
         {
-            if (!Regex.IsMatch(message, @"\d+\s*(s|sec|secs|second|seconds|초|m|min|mins|minute|minutes|분)\b", RegexOptions.IgnoreCase))
+            if (!CountdownUnitRegex.IsMatch(message))
                 return false;
         }
         

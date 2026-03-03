@@ -24,7 +24,7 @@ internal class ChatTranslatorHud : IModSharpModule
         bool hotReload)
     {
         var bridge = new InterfaceBridge(sharedSystem, dllPath, sharpPath, version, configuration, hotReload);
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         
         services.AddSingleton(sharedSystem);
         services.AddSingleton(bridge);
@@ -62,7 +62,7 @@ internal class ChatTranslatorHud : IModSharpModule
             {
                 var json = File.ReadAllText(configPath);
                 var config = System.Text.Json.JsonSerializer.Deserialize<ChatTranslatorConfig>(json);
-                if (config != null) return config;
+                if (config is not null) return config;
             }
             catch (Exception ex)
             {
@@ -83,7 +83,7 @@ internal class ChatTranslatorHud : IModSharpModule
             }
         }
 
-        return new ChatTranslatorConfig();
+        return new();
     }
 
     private void OnModuleError(Exception e, string context) => 

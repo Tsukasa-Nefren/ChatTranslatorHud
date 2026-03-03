@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Ptr.Shared.Hosting;
@@ -16,9 +17,18 @@ internal class TranslationService(
     IHttpClientFactory httpClientFactory,
     InterfaceBridge bridge) : ITranslationService
 {
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, string>> _memoryCache = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, string>> _memoryCache = [];
     private readonly string _cacheDirectory = Path.Combine(bridge.DllPath, "translation_cache");
     private string _currentMapName = "";
+
+    /// <summary>Matches date-like patterns (e.g. 25.05.12) so we can ask DeepL to interpret as yy.mm.dd.</summary>
+    private static readonly Regex YyMmDdDatePattern = new(@"\b\d{2}\.\d{2}\.\d{2}\b", RegexOptions.Compiled);
+    private const string DateContextYyMmDd = "Dates in this text use yy.mm.dd format (year, month, day).";
+
+    private const int RoundContextBufferMax = 30;
+    private const int RoundContextSentencesForTranslation = 10;
+    private readonly List<string> _roundContextBuffer = [];
+    private readonly object _roundContextLock = new();
 
     public void OnInit()
     {
@@ -28,7 +38,46 @@ internal class TranslationService(
         }
     }
 
-    public async ValueTask<string?> TranslateAsync(string text, string? targetLanguage = null)
+    public void ClearRoundContext()
+    {
+        lock (_roundContextLock)
+        {
+            _roundContextBuffer.Clear();
+        }
+    }
+
+    /// <summary>Returns up to 3 previous sentences (excluding date-pattern lines) for DeepL context. Chronological order.</summary>
+    public string? GetRoundContextForTranslation()
+    {
+        if (!config.UseRoundContext) return null;
+        lock (_roundContextLock)
+        {
+            if (_roundContextBuffer.Count == 0) return null;
+            var eligible = new List<string>(_roundContextBuffer.Count);
+            for (var i = _roundContextBuffer.Count - 1; i >= 0 && eligible.Count < RoundContextSentencesForTranslation; i--)
+            {
+                var s = _roundContextBuffer[i];
+                if (!string.IsNullOrWhiteSpace(s) && !YyMmDdDatePattern.IsMatch(s))
+                    eligible.Add(s);
+            }
+            if (eligible.Count == 0) return null;
+            eligible.Reverse();
+            return string.Join("\n", eligible);
+        }
+    }
+
+    public void PushRoundMessage(string message)
+    {
+        if (!config.UseRoundContext || string.IsNullOrWhiteSpace(message)) return;
+        lock (_roundContextLock)
+        {
+            _roundContextBuffer.Add(message);
+            if (_roundContextBuffer.Count > RoundContextBufferMax)
+                _roundContextBuffer.RemoveAt(0);
+        }
+    }
+
+    public async ValueTask<string?> TranslateAsync(string text, string? targetLanguage = null, string? context = null)
     {
         if (string.IsNullOrEmpty(targetLanguage))
             return null; // 언어 지정 필수
@@ -61,6 +110,11 @@ internal class TranslationService(
                     { "text", new[] { text } },
                     { "target_lang", targetLanguage }
                 };
+                var ctx = context;
+                if (config.UseDateContext && string.IsNullOrWhiteSpace(ctx) && YyMmDdDatePattern.IsMatch(text))
+                    ctx = DateContextYyMmDd;
+                if (!string.IsNullOrWhiteSpace(ctx))
+                    requestBody["context"] = ctx;
 
                 var json = JsonSerializer.Serialize(requestBody);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -84,7 +138,7 @@ internal class TranslationService(
                 var responseContent = await response.Content.ReadAsStringAsync();
                 var result = JsonSerializer.Deserialize<DeepLResponse>(responseContent);
 
-                if (result?.Translations != null && result.Translations.Length > 0)
+                if (result?.Translations is not null && result.Translations.Length > 0)
                 {
                     var translation = result.Translations[0];
                     var detectedLanguage = translation.DetectedSourceLanguage?.ToUpperInvariant();
@@ -128,15 +182,15 @@ internal class TranslationService(
         return null;
     }
 
-    public async ValueTask<Dictionary<string, string?>> TranslateToMultipleLanguagesAsync(string text, IEnumerable<string> targetLanguages)
+    public async ValueTask<Dictionary<string, string?>> TranslateToMultipleLanguagesAsync(string text, IEnumerable<string> targetLanguages, string? context = null)
     {
         var languageList = targetLanguages.Select(l => l.ToUpperInvariant()).Distinct().ToList();
         var results = languageList.ToDictionary(l => l, l => TryGetTranslation(text, l, out var cached) ? cached : null);
-        var toTranslate = results.Where(kvp => kvp.Value == null).Select(kvp => kvp.Key).ToList();
+        var toTranslate = results.Where(kvp => kvp.Value is null).Select(kvp => kvp.Key).ToList();
         
         if (toTranslate.Count > 0)
         {
-            var translations = await Task.WhenAll(toTranslate.Select(async lang => (lang, await TranslateAsync(text, lang))));
+            var translations = await Task.WhenAll(toTranslate.Select(async lang => (lang, await TranslateAsync(text, lang, context))));
             foreach (var (lang, result) in translations)
                 results[lang] = result;
         }
@@ -183,6 +237,21 @@ internal class TranslationService(
         }
     }
 
+    /// <summary>Builds a cache dictionary containing only entries with non-empty translations (excludes failed/empty).</summary>
+    private Dictionary<string, Dictionary<string, string>> BuildCacheForSave()
+    {
+        var cache = new Dictionary<string, Dictionary<string, string>>();
+        foreach (var (original, langDict) in _memoryCache)
+        {
+            var valid = langDict
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            if (valid.Count > 0)
+                cache[original] = valid;
+        }
+        return cache;
+    }
+
     public void FlushCache()
     {
         if (string.IsNullOrWhiteSpace(_currentMapName) || !config.CacheTranslations || _memoryCache.IsEmpty)
@@ -191,12 +260,10 @@ internal class TranslationService(
         try
         {
             var cacheFile = GetCacheFilePath(_currentMapName);
-            
-            var cache = _memoryCache.ToDictionary(
-                kvp => kvp.Key,
-                kvp => kvp.Value.ToDictionary(inner => inner.Key, inner => inner.Value)
-            );
-            
+            var cache = BuildCacheForSave();
+            if (cache.Count == 0)
+                return;
+
             var json = JsonSerializer.Serialize(cache, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(cacheFile, json);
             
@@ -216,11 +283,10 @@ internal class TranslationService(
             return;
 
         var mapName = _currentMapName;
-        var cache = _memoryCache.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.ToDictionary(inner => inner.Key, inner => inner.Value)
-        );
-        
+        var cache = BuildCacheForSave();
+        if (cache.Count == 0)
+            return;
+
         _ = Task.Run(async () =>
         {
             try
@@ -252,7 +318,7 @@ internal class TranslationService(
             try
             {
                 var cache = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, string>>>(json);
-                if (cache != null)
+                if (cache is not null)
                 {
                     foreach (var (original, translations) in cache)
                     {
@@ -275,7 +341,7 @@ internal class TranslationService(
             }
             
             var oldCache = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            if (oldCache != null)
+            if (oldCache is not null)
             {
                 foreach (var (original, translated) in oldCache)
                 {

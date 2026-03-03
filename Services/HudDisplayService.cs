@@ -9,20 +9,17 @@ using Sharp.Modules.MenuManager.Shared;
 using ChatTranslatorHud;
 using ChatTranslatorHud.Utils;
 
-#pragma warning disable CS9113
-
 namespace ChatTranslatorHud.Services;
 
 internal class HudDisplayService(
     ILogger<HudDisplayService> logger,
     InterfaceBridge bridge,
-    ChatTranslatorConfig _config,
     ITranslationService translationService,
     IPlayerTranslationService playerTranslationService,
     IPlayerPreferenceService preferenceService,
     ISharedSystem sharedSystem) : IHudDisplayService
 {
-    private readonly ConcurrentQueue<ActiveHudMessage> _activeMessages = new();
+    private readonly ConcurrentQueue<ActiveHudMessage> _activeMessages = [];
     private readonly object _lockObject = new();
     private ActiveHudMessage? _currentCountdown;
     private bool _isRunning = false;
@@ -47,7 +44,8 @@ internal class HudDisplayService(
         _activeMessages.Enqueue(message);
     }
 
-    public void AddCountdown(string prefix, int seconds, string suffix = "", bool isMmss = false, string unit = "", string? originalText = null)
+    public void AddCountdown(string prefix, int seconds, string suffix = "", bool isMmss = false, string unit = "", string? originalText = null,
+        IReadOnlyDictionary<string, (string Prefix, string Suffix)>? perLangPrefixSuffix = null)
     {
         lock (_lockObject)
         {
@@ -59,7 +57,8 @@ internal class HudDisplayService(
                 TplSuffix = suffix,
                 TplIsMmss = isMmss,
                 TplUnit = unit,
-                OriginalText = originalText
+                OriginalText = originalText,
+                PerLangPrefixSuffix = perLangPrefixSuffix
             };
         }
     }
@@ -135,7 +134,7 @@ internal class HudDisplayService(
                     _activeMessages.Enqueue(message);
                 }
 
-                if (_currentCountdown != null && 
+                if (_currentCountdown is not null && 
                     _currentCountdown.Type == Utils.MessageType.Countdown &&
                     now < _currentCountdown.ExpiryTime)
                 {
@@ -144,7 +143,7 @@ internal class HudDisplayService(
                         _displayableMessagesBuffer.Add(_currentCountdown);
                     }
                 }
-                else if (_currentCountdown != null && 
+                else if (_currentCountdown is not null && 
                          _currentCountdown.Type == Utils.MessageType.Countdown &&
                          now >= _currentCountdown.ExpiryTime)
                 {
@@ -160,22 +159,6 @@ internal class HudDisplayService(
         {
             logger.LogError(ex, "Error occurred during HUD display update");
         }
-    }
-
-    private void DisplayGlobalHud(List<ActiveHudMessage> messages)
-    {
-        var messageTexts = messages.Select(m => m.GetCurrentText()).Where(t => !string.IsNullOrEmpty(t)).ToList();
-        if (messageTexts.Count == 0) return;
-
-        var combinedString = string.Join("\n", messageTexts);
-        
-        var enabledClients = bridge.ClientManager.GetGameClients(inGame: true)
-            .Where(c => c.IsValidPlayer() && preferenceService.IsHudEnabled(c)).ToList();
-        
-        if (enabledClients.Count == 0) return;
-        
-        var filter = new RecipientFilter(enabledClients);
-        bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Center, combinedString, filter);
     }
 
     private void DisplayPerPlayerHud(List<ActiveHudMessage> messages)
@@ -203,7 +186,7 @@ internal class HudDisplayService(
                     string text;
                     if (message.Type == Utils.MessageType.Static)
                     {
-                        if (message.OriginalText != null && 
+                        if (message.OriginalText is not null && 
                             translationService.TryGetTranslation(message.OriginalText, lang, out var translated) &&
                             !string.IsNullOrWhiteSpace(translated))
                         {
@@ -216,7 +199,7 @@ internal class HudDisplayService(
                     }
                     else
                     {
-                        text = message.GetCurrentText();
+                        text = message.GetCurrentText(lang);
                     }
                     
                     if (!string.IsNullOrEmpty(text))
@@ -256,6 +239,7 @@ internal class ActiveHudMessage
     public bool TplIsMmss { get; init; }
     public string? TplUnit { get; init; }
     public string? OriginalText { get; init; }
+    public IReadOnlyDictionary<string, (string Prefix, string Suffix)>? PerLangPrefixSuffix { get; init; }
 
     public bool ShouldDisplay()
     {
@@ -267,7 +251,7 @@ internal class ActiveHudMessage
         return secs <= CountdownDisplayThreshold && secs > 0;
     }
 
-    public string GetCurrentText()
+    public string GetCurrentText(string? lang = null)
     {
         if (Type == Utils.MessageType.Static)
         {
@@ -277,6 +261,12 @@ internal class ActiveHudMessage
         var remaining = ExpiryTime - DateTimeOffset.UtcNow;
         var secs = (int)Math.Ceiling(remaining.TotalSeconds);
         if (secs < 0) secs = 0;
+
+        var langKey = lang?.ToUpperInvariant() ?? "";
+        if (PerLangPrefixSuffix is not null && langKey.Length > 0 && PerLangPrefixSuffix.TryGetValue(langKey, out var ps))
+        {
+            return $"{ps.Prefix}{secs}{ps.Suffix}";
+        }
 
         if (TplIsMmss)
         {

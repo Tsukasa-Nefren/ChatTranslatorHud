@@ -2,6 +2,8 @@
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
+		<Version>1.1.0</Version>
+		<LangVersion>14</LangVersion>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -12,7 +14,7 @@
 		<PackageReference Include="ModSharp.Sharp.Modules.MenuManager.Shared" Version="2.*" PrivateAssets="all" />
 		<PackageReference Include="ModSharp.Sharp.Modules.LocalizerManager.Shared" Version="2.*" PrivateAssets="all" />
 		<PackageReference Include="ModSharp.Sharp.Modules.ClientPreferences.Shared" Version="2.*" PrivateAssets="all" />
-		<PackageReference Include="Ptr.Shared" Version="*" PrivateAssets="all" />
+		<PackageReference Include="Ptr.Shared" Version="1.*" PrivateAssets="all" />
 	</ItemGroup>
 
 	<ItemGroup>

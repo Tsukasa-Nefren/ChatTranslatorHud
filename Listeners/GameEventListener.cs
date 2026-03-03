@@ -22,8 +22,6 @@ internal class GameEventListener(
     ChatTranslatorConfig config,
     InterfaceBridge bridge) : IGameListener, IGameEventListener
 {
-    private readonly List<IGameClient> _clientBuffer = new(64);
-
     #region IModule
 
     public void OnInit()
@@ -71,6 +69,22 @@ internal class GameEventListener(
         }
     }
 
+    public void OnRoundRestart()
+    {
+        try
+        {
+            translationService.ClearRoundContext();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error clearing round context");
+        }
+    }
+
+    public void OnRoundRestarted()
+    {
+    }
+
     public ECommandAction ConsoleSay(string message)
     {
         if (!config.EnableTranslation || string.IsNullOrWhiteSpace(message))
@@ -98,14 +112,13 @@ internal class GameEventListener(
 
     private async Task ProcessPerPlayerTranslationAsync(string message)
     {
-        _clientBuffer.Clear();
-        
+        List<IGameClient> clientBuffer = new(64);
         try
         {
             foreach (var client in bridge.ClientManager.GetGameClients(inGame: true))
             {
                 if (client.IsValidPlayer())
-                    _clientBuffer.Add(client);
+                    clientBuffer.Add(client);
             }
         }
         catch (Exception ex)
@@ -114,7 +127,7 @@ internal class GameEventListener(
             return;
         }
         
-        if (_clientBuffer.Count == 0)
+        if (clientBuffer.Count == 0)
             return;
         
         if (MessageParser.IsCountdownOnly(message))
@@ -122,29 +135,79 @@ internal class GameEventListener(
             var parseResult = MessageParser.TryParseMessage(message);
             if (parseResult.IsValid)
             {
+                var countdownLanguageGroups = new Dictionary<string, List<IGameClient>>();
+                foreach (var client in clientBuffer)
+                {
+                    if (!client.IsValid || !client.IsInGame) continue;
+                    var lang = playerTranslationService.GetPlayerLanguage(client);
+                    if (!string.IsNullOrEmpty(lang))
+                        countdownLanguageGroups.AddToLanguageGroup(lang, client);
+                }
+                var countdownTranslations = countdownLanguageGroups.Count > 0
+                    ? await translationService.TranslateToMultipleLanguagesAsync(message, countdownLanguageGroups.Keys, translationService.GetRoundContextForTranslation())
+                    : new Dictionary<string, string?>();
+                if (countdownTranslations.Values.Any(t => !string.IsNullOrWhiteSpace(t)))
+                    translationService.PushRoundMessage(message);
+                var countdownDefaultTranslation = countdownTranslations.Values.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)) ?? message;
+
+                var numStr = parseResult.Seconds.ToString();
+                var perLangPrefixSuffix = new Dictionary<string, (string Prefix, string Suffix)>();
+                foreach (var (lang, translatedText) in countdownTranslations)
+                {
+                    if (string.IsNullOrWhiteSpace(translatedText)) continue;
+                    var idx = translatedText.IndexOf(numStr, StringComparison.Ordinal);
+                    if (idx >= 0)
+                    {
+                        perLangPrefixSuffix[lang] = (translatedText[..idx], translatedText[(idx + numStr.Length)..]);
+                    }
+                }
+
                 bridge.ModSharp.PushTimer(() =>
                 {
-                    foreach (var client in _clientBuffer)
+                    foreach (var (lang, playerClients) in countdownLanguageGroups)
+                    {
+                        var translatedText = countdownTranslations.GetValueOrDefault(lang);
+                        var isTranslated = !string.IsNullOrWhiteSpace(translatedText);
+                        foreach (var client in playerClients)
+                        {
+                            if (!client.IsValid || !client.IsInGame) continue;
+                            var filter = new RecipientFilter(client);
+                            if (isTranslated && preferenceService.IsOriginalMessageEnabled(client))
+                                bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}Console:{ChatColor.White} {message}", filter);
+                            if (isTranslated)
+                                bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}[Translated]{ChatColor.Green} {translatedText}", filter);
+                            if (!isTranslated)
+                                bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}Console:{ChatColor.Green} {message}", filter);
+                        }
+                    }
+                    foreach (var client in clientBuffer)
                     {
                         if (!client.IsValid || !client.IsInGame) continue;
-                        bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}Console:{ChatColor.White} {message}", new RecipientFilter(client));
+                        var lang = playerTranslationService.GetPlayerLanguage(client);
+                        if (string.IsNullOrEmpty(lang) || !countdownLanguageGroups.ContainsKey(lang))
+                        {
+                            var filter = new RecipientFilter(client);
+                            bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}Console:{ChatColor.Green} {message}", filter);
+                        }
                     }
-                    
+
                     hudDisplayService.AddCountdown(
                         parseResult.Prefix,
                         parseResult.Seconds,
                         parseResult.Suffix,
                         parseResult.IsMmss,
                         parseResult.Unit,
-                        message
+                        message,
+                        perLangPrefixSuffix.Count > 0 ? perLangPrefixSuffix : null
                     );
+                    hudDisplayService.AddMessage(countdownDefaultTranslation, message);
                 }, 0.001);
                 return;
             }
         }
         
         var languageGroups = new Dictionary<string, List<IGameClient>>();
-        foreach (var client in _clientBuffer)
+        foreach (var client in clientBuffer)
         {
             var lang = playerTranslationService.GetPlayerLanguage(client);
             if (!string.IsNullOrEmpty(lang))
@@ -154,11 +217,15 @@ internal class GameEventListener(
         if (languageGroups.Count == 0)
             return;
         
+        var roundContext = translationService.GetRoundContextForTranslation();
         var translations = await translationService.TranslateToMultipleLanguagesAsync(
-            message, 
-            languageGroups.Keys
+            message,
+            languageGroups.Keys,
+            roundContext
         );
-        
+        if (translations.Values.Any(t => !string.IsNullOrWhiteSpace(t)))
+            translationService.PushRoundMessage(message);
+
         var defaultTranslation = translations.Values.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)) ?? message;
         
         bridge.ModSharp.PushTimer(() =>
@@ -168,16 +235,17 @@ internal class GameEventListener(
                 foreach (var (lang, playerClients) in languageGroups)
                 {
                     var translatedText = translations.GetValueOrDefault(lang);
-                    if (string.IsNullOrWhiteSpace(translatedText))
-                        continue;
-                    
+                    var isTranslated = !string.IsNullOrWhiteSpace(translatedText);
                     foreach (var client in playerClients)
                     {
                         if (!client.IsValid || !client.IsInGame) continue;
                         var filter = new RecipientFilter(client);
-                        if (preferenceService.IsOriginalMessageEnabled(client))
+                        if (isTranslated && preferenceService.IsOriginalMessageEnabled(client))
                             bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}Console:{ChatColor.White} {message}", filter);
-                        bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}[Translated]{ChatColor.Green} {translatedText}", filter);
+                        if (isTranslated)
+                            bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}[Translated]{ChatColor.Green} {translatedText}", filter);
+                        if (!isTranslated)
+                            bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}Console:{ChatColor.Green} {message}", filter);
                     }
                 }
                 

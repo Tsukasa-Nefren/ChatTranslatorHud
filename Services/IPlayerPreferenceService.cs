@@ -16,4 +16,6 @@ public interface IPlayerPreferenceService : IModule
     bool ToggleOriginalMessage(IGameClient client);
     
     void SetOriginalMessageEnabled(IGameClient client, bool enabled);
+
+    void RemovePlayer(IGameClient client);
 }

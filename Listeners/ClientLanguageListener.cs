@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Ptr.Shared.Hosting;
 using Sharp.Shared.Enums;
 using Sharp.Shared.Listeners;
@@ -6,15 +5,13 @@ using Sharp.Shared.Objects;
 using ChatTranslatorHud.Services;
 using ChatTranslatorHud.Utils;
 
-#pragma warning disable CS9113
-
 namespace ChatTranslatorHud.Listeners;
 
 internal interface IClientLanguageListener : IModule;
 
 internal class ClientLanguageListener(
-    ILogger<ClientLanguageListener> _logger,
     IPlayerTranslationService playerTranslationService,
+    IPlayerPreferenceService playerPreferenceService,
     InterfaceBridge bridge) : IClientLanguageListener, IClientListener
 {
 
@@ -45,6 +42,8 @@ internal class ClientLanguageListener(
 
     public void OnClientDisconnected(IGameClient client, NetworkDisconnectionReason reason)
     {
+        playerTranslationService.RemovePlayer(client);
+        playerPreferenceService.RemovePlayer(client);
     }
 
     private void QueryPlayerLanguage(IGameClient client)

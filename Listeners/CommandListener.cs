@@ -81,10 +81,10 @@ internal class CommandListener(
     private string Localize(IGameClient client, string key, params object?[] args)
     {
         var localizer = GetLocalizer(client);
-        if (localizer == null)
+        if (localizer is null)
             return key;
         
-        return args.Length > 0 ? localizer.Format(key, args) : localizer[key];
+        return args.Length > 0 ? localizer.Format(key, args) : (localizer.TryGet(key) ?? key);
     }
 
     private ECommandAction OnThudCommand(IGameClient client, StringCommand command)
@@ -114,47 +114,41 @@ internal class CommandListener(
     {
         return Menu.Create()
             .Title(c => Localize(c, KeyMenuTitle))
-            .Description(c => Localize(c, KeyMenuDesc))
-            .Items([
-                new MenuItem(
-                    ctrl =>
-                    {
-                        var status = preferenceService.IsHudEnabled(ctrl.Client) 
-                            ? Localize(ctrl.Client, KeyOn) 
-                            : Localize(ctrl.Client, KeyOff);
-                        return new MenuItemMetadata($"{Localize(ctrl.Client, KeyHudDisplay)}: {status}");
-                    },
-                    ctrl =>
-                    {
-                        var newState = preferenceService.ToggleHud(ctrl.Client);
-                        var filter = new RecipientFilter(ctrl.Client);
-                        var message = newState
-                            ? $" {ChatColor.Green}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyHudEnabled)}"
-                            : $" {ChatColor.Red}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyHudDisabled)}";
-                        bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, message, filter);
-                        
-                        ctrl.Refresh();
-                    }),
-                new MenuItem(
-                    ctrl =>
-                    {
-                        var status = preferenceService.IsOriginalMessageEnabled(ctrl.Client) 
-                            ? Localize(ctrl.Client, KeyOn) 
-                            : Localize(ctrl.Client, KeyOff);
-                        return new MenuItemMetadata($"{Localize(ctrl.Client, KeyOriginalMessage)}: {status}");
-                    },
-                    ctrl =>
-                    {
-                        var newState = preferenceService.ToggleOriginalMessage(ctrl.Client);
-                        var filter = new RecipientFilter(ctrl.Client);
-                        var message = newState
-                            ? $" {ChatColor.Green}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyOriginalEnabled)}"
-                            : $" {ChatColor.Red}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyOriginalDisabled)}";
-                        bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, message, filter);
-                        
-                        ctrl.Refresh();
-                    })
-            ])
+            .DisabledItem(c => Localize(c, KeyMenuDesc))
+            .Item((IGameClient c, ref MenuItemContext ctx) =>
+            {
+                var status = preferenceService.IsHudEnabled(c)
+                    ? Localize(c, KeyOn)
+                    : Localize(c, KeyOff);
+                ctx.Title = $"{Localize(c, KeyHudDisplay)}: {status}";
+                ctx.Action = ctrl =>
+                {
+                    var newState = preferenceService.ToggleHud(ctrl.Client);
+                    var filter = new RecipientFilter(ctrl.Client);
+                    var message = newState
+                        ? $" {ChatColor.Green}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyHudEnabled)}"
+                        : $" {ChatColor.Red}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyHudDisabled)}";
+                    bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, message, filter);
+                    ctrl.Refresh();
+                };
+            })
+            .Item((IGameClient c, ref MenuItemContext ctx) =>
+            {
+                var status = preferenceService.IsOriginalMessageEnabled(c)
+                    ? Localize(c, KeyOn)
+                    : Localize(c, KeyOff);
+                ctx.Title = $"{Localize(c, KeyOriginalMessage)}: {status}";
+                ctx.Action = ctrl =>
+                {
+                    var newState = preferenceService.ToggleOriginalMessage(ctrl.Client);
+                    var filter = new RecipientFilter(ctrl.Client);
+                    var message = newState
+                        ? $" {ChatColor.Green}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyOriginalEnabled)}"
+                        : $" {ChatColor.Red}[ChatTranslatorHud]{ChatColor.White} {Localize(ctrl.Client, KeyOriginalDisabled)}";
+                    bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, message, filter);
+                    ctrl.Refresh();
+                };
+            })
             .Build();
     }
 }

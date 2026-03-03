@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
 using Ptr.Shared.Hosting;
 using Sharp.Shared.Definition;
 using Sharp.Shared.Objects;
@@ -7,17 +6,11 @@ using Sharp.Shared.Enums;
 using Sharp.Shared.Types;
 using ChatTranslatorHud.Utils;
 
-#pragma warning disable CS9113
-
 namespace ChatTranslatorHud.Services;
 
-internal class PlayerTranslationService(
-    ILogger<PlayerTranslationService> _logger,
-    ITranslationService translationService,
-    InterfaceBridge bridge,
-    ChatTranslatorConfig _config) : IPlayerTranslationService
+internal class PlayerTranslationService(ITranslationService translationService) : IPlayerTranslationService
 {
-    private readonly ConcurrentDictionary<ulong, string> _playerLanguages = new();
+    private readonly ConcurrentDictionary<ulong, string> _playerLanguages = [];
     
     private static readonly Dictionary<string, string> SteamToDeepL = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -76,45 +69,14 @@ internal class PlayerTranslationService(
         return _playerLanguages.GetValueOrDefault((ulong)client.SteamId, "EN");
     }
 
+    public void RemovePlayer(IGameClient client)
+    {
+        _playerLanguages.TryRemove((ulong)client.SteamId, out _);
+    }
+
     public async Task<string?> GetTranslatedTextForPlayerAsync(IGameClient client, string originalText)
     {
         var targetLang = GetPlayerLanguage(client);
         return await translationService.TranslateAsync(originalText, targetLang);
-    }
-
-    public async Task SendTranslatedMessageToAllAsync(string originalText)
-    {
-        var languageGroups = new Dictionary<string, List<IGameClient>>();
-        foreach (var client in bridge.ClientManager.GetGameClients(inGame: true))
-        {
-            if (!client.IsValidPlayer()) continue;
-            var lang = GetPlayerLanguage(client);
-            if (!string.IsNullOrEmpty(lang))
-                languageGroups.AddToLanguageGroup(lang, client);
-        }
-        
-        if (languageGroups.Count == 0)
-            return;
-        
-        var translations = await translationService.TranslateToMultipleLanguagesAsync(
-            originalText, 
-            languageGroups.Keys
-        );
-        
-        bridge.ModSharp.PushTimer(() =>
-        {
-            foreach (var (lang, playerClients) in languageGroups)
-            {
-                var translatedText = translations.GetValueOrDefault(lang);
-                if (string.IsNullOrWhiteSpace(translatedText))
-                    continue;
-                
-                foreach (var client in playerClients)
-                {
-                    if (!client.IsValid || !client.IsInGame) continue;
-                    bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, $" {ChatColor.LightRed}[Translated]{ChatColor.Green} {translatedText}", new RecipientFilter(client));
-                }
-            }
-        }, 0.001);
     }
 }

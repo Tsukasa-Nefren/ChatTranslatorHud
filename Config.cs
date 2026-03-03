@@ -15,4 +15,10 @@ public class ChatTranslatorConfig
 
     [JsonPropertyName("DeepLApiUrl")]
     public string DeepLApiUrl { get; set; } = "https://api-free.deepl.com/v2/translate";
+
+    [JsonPropertyName("UseRoundContext")]
+    public bool UseRoundContext { get; set; } = true;
+
+    [JsonPropertyName("UseDateContext")]
+    public bool UseDateContext { get; set; } = true;
 }
