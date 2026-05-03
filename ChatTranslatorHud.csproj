@@ -2,7 +2,7 @@
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
-		<Version>1.1.0</Version>
+		<Version>1.1.2</Version>
 		<LangVersion>14</LangVersion>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
@@ -10,11 +10,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="ModSharp.Sharp.Shared" Version="2.*" PrivateAssets="all" />
-		<PackageReference Include="ModSharp.Sharp.Modules.MenuManager.Shared" Version="2.*" PrivateAssets="all" />
-		<PackageReference Include="ModSharp.Sharp.Modules.LocalizerManager.Shared" Version="2.*" PrivateAssets="all" />
-		<PackageReference Include="ModSharp.Sharp.Modules.ClientPreferences.Shared" Version="2.*" PrivateAssets="all" />
-		<PackageReference Include="Ptr.Shared" Version="1.*" PrivateAssets="all" />
+		<PackageReference Include="ModSharp.Sharp.Shared" Version="2.1.123" PrivateAssets="all" />
+		<PackageReference Include="ModSharp.Sharp.Modules.MenuManager.Shared" Version="2.1.123" PrivateAssets="all" />
+		<PackageReference Include="ModSharp.Sharp.Modules.LocalizerManager.Shared" Version="2.1.123" PrivateAssets="all" />
+		<PackageReference Include="ModSharp.Sharp.Modules.ClientPreferences.Shared" Version="2.1.123" PrivateAssets="all" />
+		<PackageReference Include="Ptr.Shared" Version="1.1.29" PrivateAssets="all" />
 	</ItemGroup>
 
 	<ItemGroup>

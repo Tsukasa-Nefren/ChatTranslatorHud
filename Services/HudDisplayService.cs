@@ -95,8 +95,13 @@ internal class HudDisplayService(
     public void Stop()
     {
         _isRunning = false;
-        _timerId = null;
-        
+
+        if (_timerId is { } id)
+        {
+            bridge.ModSharp.StopTimer(id);
+            _timerId = null;
+        }
+
         lock (_lockObject)
         {
             while (_activeMessages.TryDequeue(out _)) { }
@@ -209,9 +214,13 @@ internal class HudDisplayService(
                 }
                 
                 combinedString = _messageTextsBuffer.Count > 0 ? string.Join("\n", _messageTextsBuffer) : "";
+                // CS2 PrintChannelFilter(HudPrintChannel.Center, ...) 는 HTML 이 아니라 plain text 렌더러.
+                // 이전에 <br/> 이 literal 로 보여서 HTML 이라 오해했는데, 실은 HTML 이 아니라서
+                // <br/> 도 <Red Ball> 도 그냥 글자 그대로 표시됨. HTML escape 를 적용하면 오히려
+                // ">>" 가 "&gt;&gt;" 라는 literal 문자로 보이는 역효과 — escape 제거.
                 _languageTextsBuffer[lang] = combinedString;
             }
-            
+
             if (!string.IsNullOrEmpty(combinedString))
             {
                 var filter = new RecipientFilter(client);

@@ -69,22 +69,34 @@ internal class CommandListener(
         bridge.ClientManager.RemoveCommandCallback("thud", OnThudCommand);
     }
 
-    private ILocalizer? GetLocalizer(IGameClient client)
+    private ILocale? GetLocale(IGameClient client)
     {
         if (_localizerManager?.Instance is not { } lm)
+        {
             return null;
-        
-        lm.TryGetLocalizer(client, out var localizer);
-        return localizer;
+        }
+
+        try
+        {
+            return lm.For(client);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private string Localize(IGameClient client, string key, params object?[] args)
     {
-        var localizer = GetLocalizer(client);
-        if (localizer is null)
+        var locale = GetLocale(client);
+        if (locale is null)
+        {
             return key;
-        
-        return args.Length > 0 ? localizer.Format(key, args) : (localizer.TryGet(key) ?? key);
+        }
+
+        return locale.TryText(key, out var localized, args.AsSpan())
+            ? localized
+            : key;
     }
 
     private ECommandAction OnThudCommand(IGameClient client, StringCommand command)
@@ -101,13 +113,13 @@ internal class CommandListener(
             
             var filter = new RecipientFilter(client);
             bridge.ModSharp.PrintChannelFilter(HudPrintChannel.Chat, message, filter);
-            return ECommandAction.Skipped;
+            return ECommandAction.Stopped;
         }
 
         var menu = CreateSettingsMenu(client);
         menuManager.DisplayMenu(client, menu);
         
-        return ECommandAction.Skipped;
+        return ECommandAction.Stopped;
     }
 
     private Menu CreateSettingsMenu(IGameClient client)

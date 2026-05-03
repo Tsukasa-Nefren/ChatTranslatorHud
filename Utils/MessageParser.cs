@@ -32,6 +32,8 @@ public static class MessageParser
 
     private static readonly Regex VersionPrefixRegex = new(@"[vV](?:er)?\s*\d", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex CountdownUnitRegex = new(@"\d+\s*(s|sec|secs|second|seconds|초|m|min|mins|minute|minutes|분)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // 메시지 안의 모든 정수 시퀀스 매치 (false-positive 가드용)
+    private static readonly Regex DigitSequenceRegex = new(@"\d+", RegexOptions.Compiled);
 
     private static readonly Regex[] SystemMessageFilters = {
         new(@"^stripper\s+update\s+\d{2}\.\d{2}\.\d{2}$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
@@ -43,7 +45,9 @@ public static class MessageParser
         new(@"^\[.*\]\s*stripper", RegexOptions.IgnoreCase | RegexOptions.Compiled)
     };
 
-    private const int MaxCountdownSeconds = 61;
+    // 60→120 으로 확장. CS2 ZE 맵에서 80s/90s/120s 카운트다운이 흔함 (boss hold, 긴 defense).
+    // 너무 크게 잡으면 random 숫자를 countdown 으로 오인식할 위험 있어서 120 으로 제한.
+    private const int MaxCountdownSeconds = 120;
 
     public static ParseResult TryParseMessage(string message)
     {
@@ -155,6 +159,10 @@ public static class MessageParser
         return result;
     }
 
+    /// <summary>
+    /// StripperSharp / CONSOLE: 등 플러그인 관리 메시지가 countdown 으로 오인식되는 걸 막는 필터.
+    /// 번역 파이프라인은 통과시킴 (한 번 번역되면 캐시되므로 비용 영향 없고, 정보성 메시지라 HUD 노출 OK).
+    /// </summary>
     private static bool IsSystemMessage(string message)
     {
         foreach (var filter in SystemMessageFilters)
@@ -169,20 +177,30 @@ public static class MessageParser
     {
         if (string.IsNullOrWhiteSpace(message))
             return false;
-        
+
         if (IsSystemMessage(message))
             return false;
-        
+
         if (VersionPrefixRegex.IsMatch(message))
             return false;
-        
+
         var letters = message.Count(char.IsLetter);
         var digits = message.Count(char.IsDigit);
         var total = message.Length;
-        
+
         if (letters > 0 && (double)letters / total > 0.3)
         {
             if (!CountdownUnitRegex.IsMatch(message))
+                return false;
+
+            // 추가 가드: letter-heavy + 숫자가 2개 이상이면 정보성 메시지로 간주.
+            // 전수조사에서 발견된 false-positive 예:
+            //   "「Duration」 5 sec 「Cooldown」 80 sec"       → 5,80 (2개) → 5초 countdown 으로 오인 방지
+            //   "「Tips」 ... recover 3 HP ... 1 hp (CD:3s)"  → 3,1,3 (3개) → 3초 countdown 으로 오인 방지
+            //   "Round 5 Wave 3" 같은 게임 상태 메시지도 차단
+            // 진짜 countdown (예: "Run in 5 seconds", "30 seconds left") 은 숫자 1개뿐이라 통과.
+            var digitSequences = DigitSequenceRegex.Matches(message).Count;
+            if (digitSequences >= 2)
                 return false;
         }
         

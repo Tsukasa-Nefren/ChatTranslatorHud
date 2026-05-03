@@ -83,11 +83,42 @@ internal class PlayerPreferenceService(
         }
     }
 
-    private bool GetPreference(IGameClient client, ConcurrentDictionary<ulong, bool> cache)
+    /// <summary>
+    /// 캐시 miss 시 ClientPreferences 에서 직접 쿠키를 읽어서 복원.
+    /// 플러그인 reload/재시작 후에는 in-memory 캐시가 비어 있고, CP 모듈이
+    /// 이미 "load" 된 플레이어에 대해 OnCookieLoad 콜백을 재발화하지 않기 때문에
+    /// lazy read 가 없으면 모든 기존 접속자의 설정이 기본값으로 "초기화"된 것처럼 보임.
+    /// 이 메서드는 cache miss 시 cookie 를 직접 조회해서 cache 를 메꾸고 반환.
+    /// </summary>
+    private bool GetPreference(IGameClient client, ConcurrentDictionary<ulong, bool> cache, string cookieName)
     {
         if (!client.IsValidPlayer())
             return true;
-        return cache.GetValueOrDefault((ulong)client.SteamId, true);
+
+        var sid = (ulong)client.SteamId;
+        if (cache.TryGetValue(sid, out var cached))
+            return cached;
+
+        // Cache miss — CP 모듈에서 쿠키를 직접 조회 시도.
+        if (_clientPrefs?.Instance is { } cp && cp.IsLoaded(client.SteamId))
+        {
+            try
+            {
+                var cookie = cp.GetCookie(client.SteamId, cookieName);
+                if (cookie is not null)
+                {
+                    var loaded = cookie.GetString() == "1";
+                    cache[sid] = loaded;  // 다음 호출부터는 빠르게 히트
+                    return loaded;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Cookie lazy-load 실패: {CookieName}", cookieName);
+            }
+        }
+
+        return true;  // 진짜로 값이 없으면 기본값
     }
 
     private void SetPreference(IGameClient client, string cookieName, bool value, ConcurrentDictionary<ulong, bool> cache)
@@ -108,11 +139,11 @@ internal class PlayerPreferenceService(
         return newValue;
     }
 
-    public bool IsHudEnabled(IGameClient client) => GetPreference(client, _hudEnabledCache);
+    public bool IsHudEnabled(IGameClient client) => GetPreference(client, _hudEnabledCache, CookieHudEnabled);
     public bool ToggleHud(IGameClient client) => TogglePreference(client, CookieHudEnabled, _hudEnabledCache, IsHudEnabled);
     public void SetHudEnabled(IGameClient client, bool enabled) => SetPreference(client, CookieHudEnabled, enabled, _hudEnabledCache);
 
-    public bool IsOriginalMessageEnabled(IGameClient client) => GetPreference(client, _originalMessageEnabledCache);
+    public bool IsOriginalMessageEnabled(IGameClient client) => GetPreference(client, _originalMessageEnabledCache, CookieOriginalMsgEnabled);
     public bool ToggleOriginalMessage(IGameClient client) => TogglePreference(client, CookieOriginalMsgEnabled, _originalMessageEnabledCache, IsOriginalMessageEnabled);
     public void SetOriginalMessageEnabled(IGameClient client, bool enabled) => SetPreference(client, CookieOriginalMsgEnabled, enabled, _originalMessageEnabledCache);
 
