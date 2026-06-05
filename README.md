@@ -29,7 +29,7 @@ A ModSharp plugin for Counter-Strike 2 servers. Seamlessly translates console me
 1. Download the latest release from the [Releases](https://github.com/Tsukasa-Nefren/ChatTranslatorHud/releases) page.
 2. Extract the `.zip` file into your server's root directory (the `sharp` folder will merge automatically).
 3. Start the server once to generate the configuration file.
-4. Open the generated config file and add your DeepL API Key.
+4. Open the generated config file and add your DeepL API key.
 
 **Directory Structure:**
 ```text
